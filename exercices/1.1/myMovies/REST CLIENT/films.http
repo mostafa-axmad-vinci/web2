@@ -1,0 +1,22 @@
+### Read all pizzas
+
+@baseUrl=http://localhost:3000/films
+GET {{baseUrl}}
+
+### Read all films filtered by minimum duration
+GET {{baseUrl}}/?minimum-duration=110
+
+### Add a new films
+POST {{baseUrl}}
+Content-Type: application/json
+
+{
+    "title":"Magic Green",
+    "duration":100,
+    "budget":80000000,
+    "link":"www.papystreaming.com"
+}
+
+
+
+
