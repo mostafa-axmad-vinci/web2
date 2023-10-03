@@ -1,7 +1,9 @@
 var express = require('express');
 var router = express.Router();
+const { serialize, parse } = require('../utils/json');
+const jsonDbPath = __dirname + '/../data/films.json';
 
-const MENU = [
+const films = [
   {
     id: 1,
     title: 'Seigneur des Anneaux',
@@ -29,43 +31,64 @@ const MENU = [
 
 // Read all the films from the menu
 
-router.get('/', (req, res, next) => {
-  const minimumDuration=
-  req?.query?.['minimum-duration']>0 ? req.query['minimum-duration'] : undefined;
-  let orderedMenu;
-  console.log(`order by ${minimumDuration ?? 'not requested'}`);
-  if (minimumDuration)
-    orderedMenu = [...MENU].filter((film) => film.duration>=minimumDuration);
+router.get('/', (req, res) => {
+  const minimumFilmDuration = req?.query
+    ? Number(req.query['minimum-duration'])
+    : undefined;
+
+  const filmsJson=parse(jsonDbPath,films);
+  if (typeof minimumFilmDuration !== 'number' || minimumFilmDuration <= 0)
+    return res.sendStatus(400);
   
 
-  console.log('GET /films');
- return  res.json(orderedMenu ?? MENU);
+  if (!minimumFilmDuration) return res.json(filmsJson);
+
+  const filmsReachingMinimumDuration = filmsJson.filter(
+    (film) => film.duration >= minimumFilmDuration
+  );
+  return res.json(filmsReachingMinimumDuration);
 });
 // Read the film identified by an id in the menu
 router.get('/:id', (req, res) => {
   console.log(`GET /films/${req.params.id}`);
 
-  const indexOfFilmFound = MENU.findIndex((film) => film.id == req.params.id);
+  const filmsJson=parse(jsonDbPath,films);
+
+  const indexOfFilmFound = filmsJson.findIndex((film) => film.id == req.params.id);
 
   if (indexOfFilmFound < 0) return res.sendStatus(404);
 
- return res.json(MENU[indexOfFilmFound]);
+ return res.json(filmsJson[indexOfFilmFound]);
 });
 
 // Create a pizza to be added to the menu.
 router.post('/', (req, res) => {
   const title = req?.body?.title?.length !== 0 ? req.body.title : undefined;
-  const duration = req?.body?.duration >= 0 ? req.body.duration : undefined;
-  const budget = req?.body?.budget >= 0 ? req.body.budget : undefined;
+  const duration =
+    typeof req?.body?.duration !== 'number' || req.body.duration < 0
+      ? undefined
+      : req.body.duration;
+  const budget =
+    typeof req?.body?.budget !== 'number' || req.body.budget < 0
+      ? undefined
+      : req.body.budget;
   const link = req?.body?.link?.length !== 0 ? req.body.link : undefined;
+
+  const filmsJson=parse(jsonDbPath,films);
 
 
   console.log('POST /films');
 
   if (!title || !duration||!budget||!link) return res.sendStatus(400); // error code '400 Bad request'
+  
+  const existingFilm = filmsJson.find(
+    (film) => film.title.toLowerCase() === title.toLowerCase()
+  );
+  if (existingFilm) return res.sendStatus(409);
 
-  const lastItemIndex = MENU?.length !== 0 ? MENU.length - 1 : undefined;
-  const lastId = lastItemIndex !== undefined ? MENU[lastItemIndex]?.id : 0;
+
+  const lastItemIndex = filmsJson?.length !== 0 ? filmsJson.length - 1 : undefined;
+  const lastId = lastItemIndex !== undefined ? filmsJson[lastItemIndex]?.id : 0;
   const nextId = lastId + 1;
 
   const newFilm = {
@@ -75,11 +98,117 @@ router.post('/', (req, res) => {
     budget:budget,
     link:link,
   };
+  
+  
+  filmsJson.push(newFilm);
 
-  MENU.push(newFilm);
+  serialize(jsonDbPath, filmsJson);
+
 
   return res.json(newFilm);
 });
+
+
+// Delete a pizza from the menu based on its id
+router.delete('/:id', (req, res) => {
+  console.log(`DELETE /films/${req.params.id}`);
+  const filmsJson=parse(jsonDbPath,films);
+
+  const foundIndex = filmsJson.findIndex(film => film.id == req.params.id);
+
+  if (foundIndex < 0) return res.sendStatus(404);
+
+  const itemsRemovedFromMenu = filmsJson.splice(foundIndex, 1);
+  const itemRemoved = itemsRemovedFromMenu[0];
+
+  serialize(jsonDbPath, filmsJson);
+
+
+  res.json(itemRemoved);
+});
+
+
+// Update a film based on its id and new values for its parameters
+router.patch('/:id', (req, res) => {
+  console.log(`PATCH /films/${req.params.id}`);
+  const filmsJson=parse(jsonDbPath,films);
+
+  const title = req?.body?.title
+  const duration = req?.body?.duration 
+  const budget = req?.body?.budget
+  const link = req?.body?.link
+
+
+  console.log('POST /films');
+
+  if ((!title && !duration && !budget && !link) || title?.length === 0 || link?.length === 0) return res.sendStatus(400);
+
+  const foundIndex = filmsJson.findIndex(film => film.id == req.params.id);
+
+  if (foundIndex < 0) return res.sendStatus(404);
+
+  const updatedFilm = {...filmsJson[foundIndex], ...req.body};
+
+  filmsJson[foundIndex] = updatedFilm;
+
+  serialize(jsonDbPath, filmsJson);
+
+
+  res.json(updatedFilm);
+});
+
+router.put('/:id', function (req, res) {
+
+  const filmsJson=parse(jsonDbPath,films);
+  const title = req?.body?.title;
+  const link = req?.body?.link;
+  const duration = req?.body?.duration;
+  const budget = req?.body?.budget;
+
+console.log(`Tu ${req.body} vois`)
+
+
+  if (
+    !req.body ||
+    !title ||
+    !title.trim() ||
+    !link ||
+    !link.trim() ||
+    duration === undefined ||
+    typeof req?.body?.duration !== 'number' ||
+    duration < 0 ||
+    budget === undefined ||
+    typeof req?.body?.budget !== 'number' ||
+    budget < 0
+  )
+    return res.sendStatus(400);
+
+  const id = req.params.id;
+  const indexOfFilmFound = filmsJson.findIndex((film) => film.id == id);
+
+  if (indexOfFilmFound < 0) {
+    const newFilm = { id, title, link, duration, budget };
+    filmsJson.push(newFilm);
+    serialize(jsonDbPath, filmsJson);
+
+    return res.json(newFilm);
+  }
+
+  const filmPriorToChange = filmsJson[indexOfFilmFound];
+  const objectContainingPropertiesToBeUpdated = req.body;
+
+  const updatedFilm = {
+    ...filmPriorToChange,
+    ...objectContainingPropertiesToBeUpdated,
+  };
+
+  filmsJson[indexOfFilmFound] = updatedFilm;
+  serialize(jsonDbPath, filmsJson);
+
+  return res.json(updatedFilm);
+});
+
+
 
 
 
